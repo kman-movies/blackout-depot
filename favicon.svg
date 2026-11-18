@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx=".5" cy=".45" r=".75"><stop offset="0" stop-color="#3a0d10"/><stop offset="1" stop-color="#0c0809"/></radialGradient>
+    <linearGradient id="sign" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd84e"/><stop offset="1" stop-color="#eaa314"/></linearGradient>
+    <clipPath id="sq"><rect width="512" height="512" rx="104"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <!-- warning triangle -->
+    <path d="M256 44 C270 44 280 51 287 63 L476 392 C490 417 474 448 445 448 L67 448 C38 448 22 417 36 392 L225 63 C232 51 242 44 256 44 Z" fill="#0d0b0b"/>
+    <path d="M256 84 L448 418 L64 418 Z" fill="url(#sign)" stroke="url(#sign)" stroke-width="22" stroke-linejoin="round"/>
+    <!-- a zombie hand clawing up out of the ground -->
+    <g fill="#0d0b0b">
+      <g transform="rotate(-10 228 260)"><rect x="214" y="178" width="26" height="100" rx="13"/><path d="M218 184 L227 164 L236 184 Z"/></g>
+      <g transform="rotate(-2 256 250)"><rect x="244" y="158" width="27" height="110" rx="13.5"/><path d="M248 164 L257 142 L267 164 Z"/></g>
+      <g transform="rotate(8 284 258)"><rect x="273" y="170" width="26" height="100" rx="13"/><path d="M277 176 L286 156 L295 176 Z"/></g>
+      <g transform="rotate(18 308 274)"><rect x="298" y="204" width="22" height="80" rx="11"/><path d="M302 209 L309 192 L316 209 Z"/></g>
+      <g transform="rotate(-48 196 300)"><rect x="184" y="254" width="25" height="76" rx="12.5"/><path d="M188 260 L196 242 L205 260 Z"/></g>
+      <path d="M206 262 C206 250 216 244 228 244 L300 248 C312 249 320 258 318 270 L314 330 C312 346 300 356 284 356 L238 356 C220 356 208 344 208 328 Z"/>
+      <g stroke="#eaa314" stroke-width="4" stroke-linecap="round" fill="none"><path d="M241 252 L241 236"/><path d="M270 254 L271 238"/><path d="M297 258 L299 244"/></g>
+      <!-- forearm and torn sleeve -->
+      <path d="M232 340 L292 340 L304 404 L220 404 Z"/>
+      <path d="M210 372 L226 360 L238 372 L252 358 L266 372 L280 358 L294 372 L310 360 L322 380 L316 404 L204 404 Z"/>
+      <!-- broken ground -->
+      <path d="M104 404 L170 386 L196 398 L226 382 L262 396 L296 380 L330 398 L366 386 L408 404 L418 418 L94 418 Z"/>
+    </g>
+    <!-- bone showing through a gash on the wrist -->
+    
+    <!-- blood dripping off the sign -->
+    <g fill="#c4161c">
+      <path d="M150 418 L150 446 C150 454 156 458 160 458 C165 458 170 454 170 446 L170 418 Z"/>
+      <path d="M330 418 L330 470 C330 479 336 483 341 483 C346 483 352 479 352 470 L352 418 Z"/>
+      <path d="M386 418 L386 438 C386 444 390 447 394 447 C398 447 402 444 402 438 L402 418 Z"/>
+    </g>
+  </g>
+</svg>
