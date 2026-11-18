@@ -376,6 +376,27 @@ kbd{font-family:var(--mono);font-size:12px;border:1px solid var(--dim);padding:0
 .diff span{font-size:14px;color:#bdb7a9}
 .diff.sel{border-color:var(--blood);box-shadow:inset 0 0 0 1px var(--blood)}
 .fe-panel .lbl{display:block;margin-top:8px}
+.coop-lede{max-width:60ch;color:var(--bone);opacity:.85;margin:6px 0 16px}
+.coop-f{display:grid;gap:6px;max-width:320px;margin-bottom:16px}
+.coop-f input,.coop-join input{background:#0e1216;border:1px solid var(--line);color:var(--bone);font:600 18px var(--hud,monospace);padding:9px 12px;letter-spacing:.06em}
+.coop-f input:focus,.coop-join input:focus{outline:2px solid var(--amber);outline-offset:1px}
+.coop-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;max-width:820px}
+.coop-box{border:1px solid var(--line);background:#0e1216;padding:14px 16px;display:grid;gap:8px;align-content:start}
+.coop-box p{margin:0;opacity:.8}
+.coop-join{display:flex;gap:8px;flex-wrap:wrap}.coop-join input{width:9ch;text-transform:uppercase;letter-spacing:.2em}
+.coop-err{color:#ff7a6a;margin:14px 0 0;max-width:62ch}.coop-note{color:var(--amber);margin:14px 0 0}
+.coop-small{opacity:.55;font-size:13px;margin-top:18px;max-width:62ch}
+.coop-code{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 4px}
+.coop-code b{font-family:var(--hud,monospace);font-size:44px;letter-spacing:.22em;color:var(--amber)}
+.coop-link{opacity:.6;font-size:13px;word-break:break-all;margin:0 0 14px;user-select:all}
+.coop-list{list-style:none;padding:0;margin:8px 0 10px;display:grid;gap:6px;max-width:420px}
+.coop-list li{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:#0e1216;padding:8px 12px;font-size:18px}
+.coop-list li i{width:12px;height:12px;border-radius:50%;flex:none}.coop-list li span{margin-left:auto;font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.6}
+.coop-meta{opacity:.7;margin:0}.coop-wait{opacity:.75;margin:0}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--bone)}
+.nethud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:46%;display:grid;gap:3px;font-size:14px;background:rgba(8,10,13,.55);padding:8px 10px;border-left:2px solid var(--amber);pointer-events:none;min-width:170px}
+.nethud .nh-t{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.7}
+.nethud .nh-p{display:flex;align-items:center;gap:7px}.nethud .nh-p i{width:9px;height:9px;border-radius:50%}.nethud .nh-p span{margin-left:auto;opacity:.6;font-size:12px;padding-left:10px}
 .exgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:14px}
 .excard{border:1px solid var(--line);padding:12px 14px;background:#0e1216}
 .excard.locked{opacity:.45}
@@ -520,6 +541,7 @@ kbd{font-family:var(--mono);font-size:12px;border:1px solid var(--dim);padding:0
       <nav class="fe-menu" id="feMenu" aria-label="Main menu">
         <button data-fe="new"><span>New game</span></button>
         <button data-fe="maps"><span>Maps</span></button>
+        <button data-fe="coop"><span>Co-op</span></button>
         <button data-fe="settings"><span>Settings</span></button>
         <button data-fe="controls"><span>Controls</span></button>
         <button data-fe="credits"><span>Credits</span></button>
@@ -13215,7 +13237,7 @@ const TIPS = [
 function skipSplash() { if (S.state !== 'splash') return; $('#splash').classList.add('out'); setTimeout(() => { $('#splash').classList.remove('out'); toFront(true); }, 500); }
 function toFront(first) {
   if (locked) document.exitPointerLock();
-  if (!first) newGame(feMap, feDiff);
+  if (!first) { if (NET.on) netLeave(true); newGame(feMap, feDiff); }
   setState('front'); fePanel = null; $('#fePanel').hidden = true; $('#front').classList.remove('panel-open');
   feHighlight(); captureMapShot();
   audioInit(); MUSIC.play('menu');
@@ -13240,6 +13262,7 @@ function feOpen(k) {
   fePanel = k; const P0 = $('#fePanel'); P0.hidden = false; $('#front').classList.add('panel-open');
   if (k === 'maps') P0.innerHTML = mapsPanel();
   else if (k === 'credits') P0.innerHTML = creditsPanel();
+  else if (k === 'coop') P0.innerHTML = coopPanel();
   const first = P0.querySelector('button'); if (first) first.focus({ preventScroll: true });
 }
 function closePanel() { fePanel = null; $('#fePanel').hidden = true; $('#front').classList.remove('panel-open'); SFX.tick(); }
@@ -13359,6 +13382,7 @@ function beginPlay() {
   audioInit(); fallbackLook = false; requestLock();
   setTimeout(() => { if (S.state === 'loading') { fallbackLook = true; setState('play'); } }, 900);
   const M = G.map;
+  if (NET.on) { netHud(); return banner(M.name + ' · co-op', `${NET.players.size} on the crew · preview: explore together, no zombies yet`, 'find'); }
   banner(M.name, G.map.quest ? 'Night shift · first wave in 40 seconds · Esc for the journal and controls' : 'Survive · first wave in 40 seconds', 'find');
 }
 // ---------- title-screen camera: slow drifts through the depot ----------
@@ -13459,6 +13483,387 @@ function exLoop(now) {
   EX.r.render(EX.scene, EX.cam);
 }
 addEventListener('resize', () => { if (EX.on) exResize(); });
+// =====================================================================
+// CO-OP — rooms by code, browser to browser over WebRTC
+// One player hosts; the others connect to the host with a six-letter code.
+// A free public broker (the PeerJS cloud) only introduces the browsers;
+// after that, game traffic goes straight between them (or through a relay
+// when a network blocks direct connections).
+// =====================================================================
+const NET_VER = 1;
+const NETCFG = (() => {
+  const q = new URLSearchParams(location.search);
+  return {
+    sig: q.get('sig') || 'wss://0.peerjs.com/peerjs',
+    ice: q.get('sig') ? [] : [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] },
+      { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+    ],
+  };
+})();
+const NET_SLOTS = [
+  { col: '#f2b41a', name: 'Amber' }, { col: '#3aa0ff', name: 'Blue' }, { col: '#7ee08a', name: 'Green' }, { col: '#ff5a8a', name: 'Pink' },
+];
+const NET = {
+  on: false, host: false, code: '', id: '', name: '', slot: 0, ws: null, wsOpen: false, hb: 0,
+  links: new Map(),      // peer id -> { pc, ctl, st, name, slot, q: [], ready }
+  players: new Map(),    // peer id -> { name, slot, st, av }
+  started: false, map: MAPCFG.id, diff: 'normal', sendT: 0, joinT: 0, err: '', lobby: false,
+};
+const netRand = (n, abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789') => { let s = ''; const a = new Uint32Array(n); crypto.getRandomValues(a); for (const v of a) s += abc[v % abc.length]; return s; };
+const netPeerId = code => 'blackoutdepot-' + code.toLowerCase();
+function netName() { let n = ''; try { n = localStorage.getItem('bd-name') || ''; } catch (e) { } return n || 'Survivor ' + netRand(2, '0123456789'); }
+function netSaveName(n) { try { localStorage.setItem('bd-name', n); } catch (e) { } }
+
+// ---------- signalling: a websocket to the broker, used only to swap connection offers
+function netSignal(id) {
+  return new Promise((res, rej) => {
+    let ws; try { ws = new WebSocket(`${NETCFG.sig}?key=peerjs&id=${encodeURIComponent(id)}&token=${netRand(10, 'abcdefghijklmnopqrstuvwxyz0123456789')}`); } catch (e) { return rej(new Error('No connection to the matchmaking service.')); }
+    NET.ws = ws; let opened = false;
+    const to = setTimeout(() => { if (!opened) { try { ws.close(); } catch (e) { } rej(new Error('The matchmaking service did not answer. Check your internet connection and try again.')); } }, 20000);
+    ws.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'OPEN') { opened = true; NET.wsOpen = true; clearTimeout(to); res(); return; }
+      if (m.type === 'ID-TAKEN') { clearTimeout(to); rej(new Error('ID-TAKEN')); return; }
+      if (m.type === 'ERROR') { clearTimeout(to); if (!opened) rej(new Error((m.payload && m.payload.msg) || 'Matchmaking error.')); return; }
+      netOnSignal(m);
+    };
+    ws.onclose = () => { NET.wsOpen = false; if (!opened) { clearTimeout(to); rej(new Error('Could not reach the matchmaking service.')); } };
+    ws.onerror = () => { };
+    clearInterval(NET.hb); NET.hb = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'HEARTBEAT' })); }, 5000);
+  });
+}
+function netSig(type, dst, payload) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify({ type, dst, payload })); }
+
+function netNewLink(peer) {
+  const pc = new RTCPeerConnection({ iceServers: NETCFG.ice });
+  const L = { pc, ctl: null, st: null, q: [], remoteSet: false, name: '', slot: -1, ready: false };
+  NET.links.set(peer, L);
+  pc.onicecandidate = e => { if (e.candidate) netSig('CANDIDATE', peer, { c: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate }); };
+  pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc.connectionState)) netDrop(peer, pc.connectionState === 'failed' ? 'lost connection' : 'left'); };
+  return L;
+}
+function netWire(peer, ch) {
+  const L = NET.links.get(peer); if (!L) return;
+  if (ch.label === 'st') { L.st = ch; ch.onmessage = e => netOnState(peer, e.data); return; }
+  L.ctl = ch;
+  ch.onopen = () => { if (!NET.host) netSend(peer, { t: 'hello', name: NET.name, ver: NET_VER }); };
+  ch.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } netOnCtl(peer, m); };
+  ch.onclose = () => netDrop(peer, 'left');
+  if (ch.readyState === 'open') ch.onopen();
+}
+async function netOnSignal(m) {
+  const peer = m.src, p = m.payload || {};
+  if (m.type === 'OFFER' && NET.host) {
+    if (NET.links.has(peer)) return;
+    if (NET.players.size >= NET_SLOTS.length) { return; }
+    const L = netNewLink(peer);
+    L.pc.ondatachannel = e => netWire(peer, e.channel);
+    await L.pc.setRemoteDescription(p.sdp); L.remoteSet = true;
+    for (const c of L.q) try { await L.pc.addIceCandidate(c); } catch (e) { }
+    L.q = [];
+    const ans = await L.pc.createAnswer(); await L.pc.setLocalDescription(ans);
+    netSig('ANSWER', peer, { sdp: L.pc.localDescription.toJSON ? L.pc.localDescription.toJSON() : { type: ans.type, sdp: ans.sdp } });
+  } else if (m.type === 'ANSWER') {
+    const L = NET.links.get(peer); if (!L) return;
+    await L.pc.setRemoteDescription(p.sdp); L.remoteSet = true;
+    for (const c of L.q) try { await L.pc.addIceCandidate(c); } catch (e) { }
+    L.q = [];
+  } else if (m.type === 'CANDIDATE') {
+    const L = NET.links.get(peer); if (!L) return;
+    if (L.remoteSet) { try { await L.pc.addIceCandidate(p.c); } catch (e) { } } else L.q.push(p.c);
+  } else if (m.type === 'LEAVE' || m.type === 'EXPIRE') {
+    if (NET.links.has(peer)) netDrop(peer, 'left');
+    else if (!NET.host && m.type === 'EXPIRE') netFail('There is no game with that code right now. Check the code with your host.');
+  }
+}
+
+// ---------- hosting and joining
+async function netHost() {
+  netLeave(true);
+  NET.name = netName(); NET.err = ''; NET.host = true; NET.on = true; NET.lobby = true; NET.slot = 0; NET.diff = feDiff; NET.map = MAPCFG.id;
+  renderCoop('Opening a room…');
+  for (let tries = 0; tries < 4; tries++) {
+    NET.code = netRand(6); NET.id = netPeerId(NET.code);
+    try { await netSignal(NET.id); break; }
+    catch (e) { if (e.message !== 'ID-TAKEN' || tries === 3) return netFail(e.message === 'ID-TAKEN' ? 'Could not open a room. Try again.' : e.message); }
+  }
+  NET.players.clear(); NET.players.set(NET.id, { name: NET.name, slot: 0, st: null, av: null, me: true });
+  renderCoop();
+}
+async function netJoin(code) {
+  code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 6) { NET.err = 'Codes are six letters and numbers, like 7KQ2MX.'; return renderCoop(); }
+  netLeave(true);
+  NET.name = netName(); NET.err = ''; NET.host = false; NET.on = true; NET.lobby = true; NET.code = code; NET.id = netPeerId(code) + '-' + netRand(6).toLowerCase();
+  renderCoop('Connecting to ' + code + '…');
+  try { await netSignal(NET.id); } catch (e) { try { NET.id = netPeerId(code) + '-' + netRand(6).toLowerCase(); await netSignal(NET.id); } catch (e2) { return netFail(e2.message); } }
+  const host = netPeerId(code), L = netNewLink(host);
+  netWire(host, L.pc.createDataChannel('ctl', { ordered: true }));
+  netWire(host, L.pc.createDataChannel('st', { ordered: false, maxRetransmits: 0 }));
+  const off = await L.pc.createOffer(); await L.pc.setLocalDescription(off);
+  netSig('OFFER', host, { sdp: L.pc.localDescription.toJSON ? L.pc.localDescription.toJSON() : { type: off.type, sdp: off.sdp } });
+  clearTimeout(NET.joinT);
+  NET.joinT = setTimeout(() => { if (NET.on && !NET.host && !NET.players.size) netFail('Could not reach that game. Check the code. If it is right, one of your networks may be blocking direct connections.'); }, 30000);
+}
+function netFail(msg) { netLeave(true); NET.err = msg; renderCoop(); }
+function netLeave(quiet) {
+  for (const [peer, L] of NET.links) { try { netSend(peer, { t: 'bye' }); } catch (e) { } try { L.pc.close(); } catch (e) { } }
+  NET.links.clear();
+  for (const p of NET.players.values()) if (p.av) scene.remove(p.av.g);
+  NET.players.clear();
+  clearInterval(NET.hb); clearTimeout(NET.joinT);
+  if (NET.ws) { try { NET.ws.close(); } catch (e) { } NET.ws = null; }
+  NET.on = NET.host = NET.started = NET.lobby = false; NET.code = '';
+  netHud();
+  if (!quiet && fePanel === 'coop') renderCoop();
+}
+function netDrop(peer, why) {
+  const L = NET.links.get(peer); if (!L) return;
+  NET.links.delete(peer); try { L.pc.close(); } catch (e) { }
+  if (NET.host) {
+    const p = NET.players.get(peer);
+    if (p) { if (p.av) scene.remove(p.av.g); NET.players.delete(peer); if (IN_GAME.has(S.state)) notify(`${p.name} ${why === 'left' ? 'left the game' : 'lost connection'}`, 'bad'); netRoster(); }
+  } else {
+    // the host is gone: the session is over
+    const wasPlaying = IN_GAME.has(S.state);
+    netLeave(true);
+    NET.err = 'The host ended the session.';
+    if (wasPlaying) { banner('Session ended', 'The host left the game', 'bad'); setTimeout(() => { if (!NET.on) toFront(); }, 2500); }
+    else renderCoop();
+  }
+}
+function netSend(peer, m) { const L = NET.links.get(peer); if (L && L.ctl && L.ctl.readyState === 'open') L.ctl.send(JSON.stringify(m)); }
+function netBroadcast(m, except) { for (const peer of NET.links.keys()) if (peer !== except) netSend(peer, m); }
+function netRosterList() { return [...NET.players].map(([id, p]) => ({ id, name: p.name, slot: p.slot })); }
+function netRoster() { if (!NET.host) return; netBroadcast({ t: 'roster', players: netRosterList(), started: NET.started, map: NET.map, diff: NET.diff }); if (fePanel === 'coop') renderCoop(); netHud(); }
+
+function netOnCtl(peer, m) {
+  if (NET.host) {
+    const L = NET.links.get(peer); if (!L) return;
+    if (m.t === 'hello') {
+      if (NET.players.size >= NET_SLOTS.length) { netSend(peer, { t: 'full' }); return; }
+      const used = new Set([...NET.players.values()].map(p => p.slot)); let slot = 1; while (used.has(slot)) slot++;
+      const name = String(m.name || 'Survivor').slice(0, 18);
+      L.name = name; L.slot = slot; L.ready = true;
+      NET.players.set(peer, { name, slot, st: null, av: null });
+      netSend(peer, { t: 'welcome', id: peer, slot, map: NET.map, diff: NET.diff, started: NET.started, players: netRosterList(), ver: NET_VER });
+      netRoster();
+      if (IN_GAME.has(S.state)) notify(`${name} joined the game`, 'good'); else SFX.tick();
+      if (m.ver !== NET_VER) netSend(peer, { t: 'warn', msg: 'Your game is a different version from the host. Refresh the page if things look wrong.' });
+    } else if (m.t === 'bye') netDrop(peer, 'left');
+    return;
+  }
+  // guest side
+  if (m.t === 'full') return netFail('That game is full. Four players is the limit.');
+  if (m.t === 'warn') { NET.err = m.msg; return renderCoop(); }
+  if (m.t === 'welcome') {
+    clearTimeout(NET.joinT);
+    NET.slot = m.slot; NET.map = m.map; NET.diff = m.diff; NET.started = m.started;
+    if (m.map !== MAPCFG.id) return netTravel(m.map);
+    netApplyRoster(m.players);
+    renderCoop();
+    if (m.started) netStartLocal();
+  } else if (m.t === 'roster') {
+    NET.started = m.started; NET.diff = m.diff; netApplyRoster(m.players); if (fePanel === 'coop') renderCoop(); netHud();
+  } else if (m.t === 'start') {
+    NET.started = true; NET.diff = m.diff;
+    if (m.map !== MAPCFG.id) return netTravel(m.map);
+    netStartLocal();
+  } else if (m.t === 'bye') netDrop(peer, 'left');
+}
+function netApplyRoster(list) {
+  const keep = new Set(list.map(p => p.id));
+  for (const [id, p] of NET.players) if (!keep.has(id)) { if (p.av) scene.remove(p.av.g); NET.players.delete(id); }
+  for (const p of list) {
+    const cur = NET.players.get(p.id);
+    if (cur) { cur.name = p.name; cur.slot = p.slot; } else NET.players.set(p.id, { name: p.name, slot: p.slot, st: null, av: null, me: p.id === NET.id });
+  }
+}
+// the host is on the other map: move to that page and rejoin from there
+function netTravel(mapId) {
+  const M = MAP_LIST.find(x => x.id === mapId); if (!M) return netFail('The host is on a map this page does not know.');
+  const code = NET.code; netLeave(true);
+  renderCoop('The host is on ' + M.name + '. Taking you there…');
+  try { location.href = new URL(M.page + location.search + '#join-' + code, location.href).href; } catch (e) { location.href = M.page + '#join-' + code; }
+}
+function netStartHost() {
+  if (!NET.host) return;
+  NET.started = true; NET.diff = feDiff;
+  netBroadcast({ t: 'start', map: NET.map, diff: NET.diff }); netRoster();
+  netStartLocal();
+}
+function netStartLocal() { NET.lobby = false; startGame(MAPCFG.id, NET.diff in DIFF ? NET.diff : 'normal'); }
+
+// ---------- live state: positions, aim, weapon, shots, ~15 times a second
+function netMyState() {
+  const s = P.slots[P.cur];
+  return [NET.id, +P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2), +P.yaw.toFixed(3), +P.pitch.toFixed(3), P.lvl, s ? s.id : '', G.stats ? G.stats.shots : 0, +P.crouch.toFixed(2), Math.round(clamp(S.hp / maxHp(), 0, 1) * 100), S.state === 'dead' ? 1 : 0];
+}
+function netOnState(peer, data) {
+  let m; try { m = JSON.parse(data); } catch (e) { return; }
+  if (NET.host) { if (!Array.isArray(m) || m[0] !== peer) return; netTakeState(m); return; }
+  if (m && m.S) for (const st of m.S) if (st[0] !== NET.id) netTakeState(st);
+}
+function netTakeState(st) {
+  const p = NET.players.get(st[0]); if (!p) return;
+  p.prev = p.st; p.st = st; p.stT = performance.now();
+}
+function netTick(dt) {
+  if (!NET.on) return;
+  const playing = IN_GAME.has(S.state) && S.state !== 'loading';
+  NET.sendT -= dt;
+  if (NET.sendT <= 0 && playing) {
+    NET.sendT = 1 / 15;
+    const mine = netMyState();
+    if (NET.host) {
+      const all = [mine]; for (const [id, p] of NET.players) if (!p.me && p.st) all.push(p.st);
+      const msg = JSON.stringify({ S: all });
+      for (const L of NET.links.values()) if (L.st && L.st.readyState === 'open') try { L.st.send(msg); } catch (e) { }
+    } else {
+      for (const L of NET.links.values()) if (L.st && L.st.readyState === 'open') try { L.st.send(JSON.stringify(mine)); } catch (e) { }
+    }
+  }
+  if (playing) updAvatars(dt);
+}
+
+// ---------- the other players: hi-vis night-shift crew built from simple shapes
+function makeAvatar(slot, name) {
+  const col = new THREE.Color(NET_SLOTS[slot % NET_SLOTS.length].col);
+  const M = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .8, metalness: 0 }, o));
+  const vest = M(col, { emissive: col.clone().multiplyScalar(.18) }), jeans = M(0x2a3444), boots = M(0x1a1612), skin = M(0xc8a07e), hat = M(col), dark = M(0x1c1d20, { metalness: .5, roughness: .5 });
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; return b; };
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const hip = new THREE.Group(); hip.position.set(s * .11, .86, 0);
+    hip.add(box(.15, .8, .17, jeans, 0, -.4, 0)); hip.add(box(.16, .1, .26, boots, 0, -.82, .04));
+    body.add(hip); legs.push(hip);
+  }
+  const torso = new THREE.Group(); torso.position.y = .86; body.add(torso);
+  torso.add(box(.42, .58, .24, M(0x3a3d42), 0, .3, 0));
+  torso.add(box(.44, .5, .26, vest, 0, .32, 0));
+  for (const y of [.18, .36]) torso.add(box(.45, .04, .27, M(0xdfe6ea, { emissive: 0x666666 }), 0, y, 0));   // reflective strips
+  const head = new THREE.Group(); head.position.y = .68; torso.add(head);
+  head.add(box(.2, .24, .22, skin, 0, .12, 0));
+  const helm = new THREE.Mesh(new THREE.SphereGeometry(.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), hat); helm.position.y = .2; helm.castShadow = true; head.add(helm);
+  head.add(box(.34, .025, .34, hat, 0, .2, .03));
+  const lamp = new THREE.Mesh(new THREE.CircleGeometry(.035, 12), new THREE.MeshBasicMaterial({ color: 0xfff2c0 })); lamp.position.set(0, .28, .14); head.add(lamp);
+  // arms forward holding a rifle
+  const arms = new THREE.Group(); arms.position.set(0, .52, 0); torso.add(arms);
+  for (const s of [-1, 1]) { const a = box(.1, .1, .5, M(0x3a3d42), s * .2, 0, .22); a.rotation.y = -s * .25; arms.add(a); }
+  const gun = new THREE.Group(); gun.position.set(.05, .02, .45); arms.add(gun);
+  gun.add(box(.07, .1, .6, dark, 0, 0, .05)); gun.add(box(.05, .12, .08, dark, 0, -.1, -.08));
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0 }));
+  flash.position.set(0, 0, .42); gun.add(flash);
+  const fl = new THREE.PointLight(0xffc070, 0, 6, 2); fl.position.copy(flash.position); gun.add(fl);
+  // name tag
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(8,10,13,.7)'; c.fillRect(0, 8, 256, 48); c.fillStyle = NET_SLOTS[slot % NET_SLOTS.length].col; c.fillRect(0, 8, 8, 48);
+  c.fillStyle = '#ebe5d6'; c.font = '700 30px "Barlow Condensed", Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(name.toUpperCase().slice(0, 16), 132, 33);
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
+  tag.scale.set(.9, .225, 1); tag.position.y = 2.05; tag.renderOrder = 10; g.add(tag);
+  g.userData.noCull = true;
+  scene.add(g);
+  return { g, body, legs, torso, head, arms, flash, fl, tag, walk: 0, shots: -1, x: 0, y: 0, z: 0, yaw: 0, init: false };
+}
+function updAvatars(dt) {
+  for (const [id, p] of NET.players) {
+    if (p.me || !p.st) continue;
+    if (!p.av) p.av = makeAvatar(p.slot, p.name);
+    const a = p.av, st = p.st, [, x, y, z, yaw, pitch, lvl, wid, shots, crouch, hp, dead] = st;
+    if (!a.init) { a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.init = true; a.shots = shots; }
+    const k = Math.min(1, dt * 12), px = a.x, pz = a.z;
+    a.x += (x - a.x) * k; a.y += (y - a.y) * k; a.z += (z - a.z) * k;
+    let dy = yaw - a.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2; a.yaw += dy * k;
+    const sp = Math.hypot(a.x - px, a.z - pz) / Math.max(dt, 1e-3);
+    a.walk += dt * Math.min(sp, 7) * 2.2;
+    const sw = Math.sin(a.walk) * Math.min(1, sp / 3) * .6;
+    a.legs[0].rotation.x = sw; a.legs[1].rotation.x = -sw;
+    a.g.position.set(a.x, a.y, a.z); a.g.rotation.y = a.yaw + Math.PI;
+    a.body.position.y = -crouch * .35; a.torso.rotation.x = crouch * .25;
+    a.arms.rotation.x = -pitch * .8; a.head.rotation.x = -pitch * .5;
+    a.g.visible = !dead;
+    a.tag.visible = !dead && Math.hypot(a.x - P.x, a.z - P.z) < 40;
+    if (shots !== a.shots) { a.shots = shots; a.flash.material.opacity = 1; a.fl.intensity = 3; a.flash.scale.setScalar(rand(.8, 1.3)); }
+    a.flash.material.opacity = Math.max(0, a.flash.material.opacity - dt * 14); a.fl.intensity = Math.max(0, a.fl.intensity - dt * 40);
+    p.lvl = lvl; p.hp = hp; p.dead = dead;
+  }
+}
+function netMapMarks(g, ox, oy, sc, L) {
+  if (!NET.on) return;
+  for (const p of NET.players.values()) {
+    if (p.me || !p.av || p.lvl !== L) continue;
+    g.fillStyle = NET_SLOTS[p.slot % NET_SLOTS.length].col; g.strokeStyle = '#0b0e12'; g.lineWidth = 2;
+    g.beginPath(); g.arc(ox + p.av.x / CELL * sc, oy + p.av.z / CELL * sc, Math.max(4, sc * .26), 0, 7); g.fill(); g.stroke();
+  }
+}
+// small crew list on the HUD
+function netHud() {
+  let el = document.getElementById('netHud');
+  if (!NET.on || NET.lobby) { if (el) el.hidden = true; return; }
+  if (!el) { el = document.createElement('div'); el.id = 'netHud'; el.className = 'nethud'; document.getElementById('hud').appendChild(el); }
+  el.hidden = false;
+  const floor = l => ['B', 'G', '1', '2'][l] || '';
+  el.innerHTML = `<div class="nh-t">Co-op · ${esc(NET.code)}</div>` + [...NET.players.values()].sort((a, b) => a.slot - b.slot).map(p =>
+    `<div class="nh-p"><i style="background:${NET_SLOTS[p.slot % NET_SLOTS.length].col}"></i><b>${esc(p.name)}${p.me ? ' (you)' : ''}</b><span>${p.me ? '' : p.dead ? 'down' : p.lvl !== undefined ? 'floor ' + floor(p.lvl) : '…'}</span></div>`).join('');
+}
+setInterval(() => { if (NET.on && !NET.lobby) netHud(); }, 1000);
+
+// ---------- the co-op panel on the title screen
+function coopPanel(note) {
+  const name = esc(netName());
+  if (!NET.on) {
+    return `<button class="back">← Back</button><h2>Co-op</h2>
+      <p class="coop-lede">Play with up to three friends anywhere. One person hosts and gets a six-letter code; everyone else joins with it.</p>
+      <label class="coop-f"><span class="lbl">Your name</span><input id="netName" maxlength="18" value="${name}" autocomplete="nickname"></label>
+      <div class="coop-cols">
+        <div class="coop-box"><span class="lbl">Host</span><p>Open a room on <b>${esc(MAPCFG.building)}</b> at <b>${esc(DIFF[feDiff].name)}</b> difficulty. Change the map or difficulty in Maps first.</p><button class="btn" id="netHostBtn">Host a game</button></div>
+        <div class="coop-box"><span class="lbl">Join</span><p>Type the code your host gave you.</p><div class="coop-join"><input id="netCode" maxlength="6" placeholder="7KQ2MX" autocomplete="off" spellcheck="false" style="text-transform:uppercase"><button class="btn" id="netJoinBtn">Join</button></div></div>
+      </div>
+      ${note ? `<p class="coop-note">${esc(note)}</p>` : ''}${NET.err ? `<p class="coop-err">${esc(NET.err)}</p>` : ''}
+      <p class="coop-small">Co-op preview: you can explore the map together and see each other. Zombies, shared doors and revives come in the next update.</p>`;
+  }
+  const rows = [...NET.players.values()].sort((a, b) => a.slot - b.slot).map(p => `<li><i style="background:${NET_SLOTS[p.slot % NET_SLOTS.length].col}"></i><b>${esc(p.name)}</b>${p.slot === 0 ? '<span>host</span>' : ''}${p.me ? '<span>you</span>' : ''}</li>`).join('');
+  const link = NET.code ? coopLink() : '';
+  return `<button class="back">← Leave</button><h2>Co-op lobby</h2>
+    ${NET.code && (NET.host ? NET.wsOpen : true) ? `<div class="coop-code"><span class="lbl">Room code</span><b>${esc(NET.code)}</b>${NET.host ? `<button class="btn ghost" id="netCopy">Copy invite link</button>` : ''}</div>` : ''}
+    ${NET.host && link ? `<p class="coop-link">${esc(link)}</p>` : ''}
+    <span class="lbl">Crew · ${NET.players.size} / 4</span><ul class="coop-list">${rows || '<li class="dim">Connecting…</li>'}</ul>
+    <p class="coop-meta">${esc(MAPCFG.building)} · ${esc((DIFF[NET.host ? feDiff : NET.diff] || DIFF.normal).name)}</p>
+    ${note ? `<p class="coop-note">${esc(note)}</p>` : ''}${NET.err ? `<p class="coop-err">${esc(NET.err)}</p>` : ''}
+    <div class="btnrow">${NET.host ? `<button class="btn" id="netStart" ${NET.wsOpen ? '' : 'disabled'}>Start the shift${NET.players.size > 1 ? ' · ' + NET.players.size + ' players' : ''}</button>` : `<p class="coop-wait">${NET.players.size ? 'Waiting for the host to start…' : 'Connecting…'}</p>`}</div>`;
+}
+function coopLink() { try { const u = new URL(location.href); u.hash = 'join-' + NET.code; return u.href; } catch (e) { return '#join-' + NET.code; } }
+function renderCoop(note) { if (fePanel !== 'coop') return; const P0 = $('#fePanel'); const keep = document.activeElement && document.activeElement.id === 'netCode' ? $('#netCode').value : null; P0.innerHTML = coopPanel(note); if (keep !== null && $('#netCode')) { $('#netCode').value = keep; $('#netCode').focus(); } }
+$('#fePanel').addEventListener('click', e => {
+  if (fePanel !== 'coop') return;
+  const nm = $('#netName'); if (nm) netSaveName(nm.value.trim().slice(0, 18));
+  if (e.target.closest('.back') && NET.on) { netLeave(true); return; }
+  if (e.target.closest('#netHostBtn')) { audioInit(); netHost(); }
+  else if (e.target.closest('#netJoinBtn')) { audioInit(); netJoin($('#netCode').value); }
+  else if (e.target.closest('#netStart')) netStartHost();
+  else if (e.target.closest('#netCopy')) {
+    const t = coopLink(), b = $('#netCopy');
+    const ok = () => { b.textContent = 'Link copied'; setTimeout(() => { if ($('#netCopy')) $('#netCopy').textContent = 'Copy invite link'; }, 1600); };
+    try { navigator.clipboard.writeText(t).then(ok, () => { b.textContent = 'Select the link below'; }); } catch (er) { b.textContent = 'Select the link below'; }
+  }
+}, true);
+$('#fePanel').addEventListener('keydown', e => {
+  if (fePanel !== 'coop') return;
+  e.stopPropagation();
+  if (e.key === 'Enter' && e.target.id === 'netCode') netJoin(e.target.value);
+  if (e.key === 'Escape') { if (NET.on) netLeave(true); closePanel(); }
+});
+$('#fePanel').addEventListener('input', e => { if (e.target.id === 'netName') netSaveName(e.target.value.trim().slice(0, 18)); });
+// arriving from an invite link: #join-CODE
+function autoJoinFromHash() {
+  const m = /#join-([A-Za-z0-9]{6})/.exec(location.hash); if (!m) return false;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  const go = () => { feOpen('coop'); netJoin(m[1]); };
+  if (S.state === 'splash') { $('#splash').hidden = true; toFront(true); }
+  go(); return true;
+}
 
 // =====================================================================
 // INTERACTION LOOKUP
@@ -13562,6 +13967,7 @@ function updWaves(dt) {
     if (G.spawnT <= 0 && alive < 26) { spawnZombie(Math.random() < .5 ? 'runner' : null); G.spawnT = rand(.6, 1.2); }
     return;
   }
+  if (NET.on) return;   // co-op preview: the dead stay away until the shared world lands
   if (bossActive() && G.map.quest) return;
   if (updLockdown(dt)) return;
   if (G.between) {
@@ -13834,6 +14240,7 @@ function drawMap(cv, sc, big) {
   for (const z of zombies) if (z.state !== 'dead' && levelOfY(z.y + .3) === L && z.type !== 'boss') { g.fillStyle = z.big ? '#ff8a3a' : '#d23b2d'; g.beginPath(); g.arc(ox + z.x / CELL * sc, oy + z.z / CELL * sc, Math.max(2, sc * (z.big ? .2 : .12)), 0, 7); g.fill(); }
   if (!big && mystery && mystery.g.visible && mystery.L === L) { const x = ox + mystery.x / CELL * sc, y = oy + mystery.z / CELL * sc; g.fillStyle = '#f2b53a'; g.fillRect(x - 4, y - 4, 8, 8); g.fillStyle = '#1a1408'; g.font = '700 8px sans-serif'; g.textAlign = 'center'; g.fillText('?', x, y + 3); }
   for (const d of drops) { g.fillStyle = '#7ee08a'; g.fillRect(ox + d.x / CELL * sc - 3, oy + d.z / CELL * sc - 3, 6, 6); }
+  netMapMarks(g, ox, oy, sc, L);
   if (P.lvl === L) { const px = ox + P.x / CELL * sc, py = oy + P.z / CELL * sc; g.save(); g.translate(px, py); g.rotate(-P.yaw); g.fillStyle = '#ebe5d6'; g.beginPath(); const s = Math.max(5, sc * .3); g.moveTo(0, -s * 1.3); g.lineTo(s * .8, s); g.lineTo(-s * .8, s); g.closePath(); g.fill(); g.restore(); }
 }
 function areaOfPoint(x, z, L) { const i = cellOf(x), j = cellOf(z); return area[L][j] && area[L][j][i]; }
@@ -13844,7 +14251,8 @@ function updHUD(dt) {
   const alive = zombies.filter(z => z.state !== 'dead' && z.type !== 'boss').length;
   setHTML($('#waveSub'), G.extract ? 'Extraction' : bossActive() ? MAPCFG.bossName : G.between ? (G.wave ? 'Cleared' : 'Get ready') : G.blackout ? `Blackout · ${alive + G.toSpawn} left` : `${alive + G.toSpawn} left`);
   const im = $('#intermission');
-  if (G.between && !G.extract && !(bossActive() && G.map.quest)) { im.hidden = false; setHTML(im, `Next wave in <b>${Math.ceil(G.timer)}</b> s${G.wave ? ` · ${KB('nextWave')} to start early` : ''}`); } else im.hidden = true;
+  if (NET.on) { im.hidden = false; setHTML(im, `Co-op preview · <b>no zombies yet</b>`); }
+  else if (G.between && !G.extract && !(bossActive() && G.map.quest)) { im.hidden = false; setHTML(im, `Next wave in <b>${Math.ceil(G.timer)}</b> s${G.wave ? ` · ${KB('nextWave')} to start early` : ''}`); } else im.hidden = true;
   const B = G.boss, bb = $('#bossBar');
   if (B && bossActive()) { bb.hidden = false; $('#bossFill').style.width = clamp(B.hp / B.phaseHp, 0, 1) * 100 + '%'; setHTML($('#bossPhase'), bossHudText(B)); } else bb.hidden = true;
   setHTML($('#points'), `${S.points}<small>PTS</small>`);
@@ -13963,6 +14371,7 @@ function loop(now) {
     updAmbient(dt, t); updLights(dt, t); updParticles(dt); updPuffs(dt); updFog(dt, t); updWeather(dt); updAmbience(dt); updMusic(dt);
     if (S.state === 'splash') { splashT += dt; if (splashT > 3.2) skipSplash(); }
   } else if (S.state === 'loading') { updLoading(dt); }
+  netTick(dt);
   POST.low = !IN_GAME.has(S.state) || S.state === 'dead' ? 0 : clamp(1 - S.hp / (maxHp() * .4), 0, 1);
   if (S.state !== 'loading') renderFrame(IN_GAME.has(S.state) && S.state !== 'dead' && S.state !== 'won' && !G.cutscene, t);
 }
@@ -13994,7 +14403,7 @@ async function boot() {
   setState('splash'); splashT = 0;
   applySettings();
   requestAnimationFrame(loop);
-  autoStartFromHash();
+  autoStartFromHash() || autoJoinFromHash();
 }
 $('#splash').addEventListener('click', () => { audioInit(); skipSplash(); });
 boot();
