@@ -9,7 +9,7 @@ Built with three.js. No install: open the page and play.
 
 ## Play
 
-Once GitHub Pages is on, the game is at `https://<your-user>.github.io/blackout-depot/`.
+Once GitHub Pages is on, the game is at `https://kman-movies.github.io/blackout-depot/`.
 Hotel Halcyon is in the **Maps** panel on the title screen, or open `hotel.html` directly.
 
 ## Run locally
