@@ -385,7 +385,7 @@ kbd{font-family:var(--mono);font-size:12px;border:1px solid var(--dim);padding:0
 .coop-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;max-width:820px}
 .coop-box{border:1px solid var(--line);background:#0e1216;padding:14px 16px;display:grid;gap:8px;align-content:start}
 .coop-box p{margin:0;opacity:.8}
-.coop-join{display:flex;gap:8px;flex-wrap:wrap}.coop-join input{width:9ch;text-transform:uppercase;letter-spacing:.2em}
+.coop-join{display:flex;gap:8px;flex-wrap:wrap}.coop-join input{flex:1 1 12ch;min-width:0;width:auto;letter-spacing:.08em}
 .coop-err{color:#ff7a6a;margin:14px 0 0;max-width:62ch}.coop-note{color:var(--amber);margin:14px 0 0}
 .coop-small{opacity:.55;font-size:13px;margin-top:18px;max-width:62ch}
 .coop-code{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 4px}
@@ -14797,6 +14797,8 @@ const NETCFG = (() => {
     ice: q.get('sig') ? [] : [
       { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] },
       { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+      // a public relay on the web ports, for networks that block everything else
+      { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
     ],
   };
 })();
@@ -14829,7 +14831,10 @@ function netSignal(id) {
     };
     ws.onclose = () => { NET.wsOpen = false; if (!opened) { clearTimeout(to); rej(new Error('Could not reach the matchmaking service.')); } };
     ws.onerror = () => { };
-    clearInterval(NET.hb); NET.hb = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'HEARTBEAT' })); }, 5000);
+    // keep-alive: a worker's timer keeps ticking even when this tab is in the background
+    clearInterval(NET.hb); const beat = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'HEARTBEAT' })); };
+    NET.hb = setInterval(beat, 5000);
+    try { if (!NET.hbw) NET.hbw = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),5000)'], { type: 'text/javascript' }))); NET.hbw.onmessage = beat; } catch (e) { }
   });
 }
 function netSig(type, dst, payload) { if (NET.ws && NET.ws.readyState === 1) NET.ws.send(JSON.stringify({ type, dst, payload })); }
@@ -14839,7 +14844,15 @@ function netNewLink(peer) {
   const L = { pc, ctl: null, st: null, q: [], remoteSet: false, name: '', slot: -1, ready: false };
   NET.links.set(peer, L);
   pc.onicecandidate = e => { if (e.candidate) netSig('CANDIDATE', peer, { c: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate }); };
-  pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc.connectionState)) netDrop(peer, pc.connectionState === 'failed' ? 'lost connection' : 'left'); };
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (!NET.host && !NET.players.size) { if (s === 'connecting') netStage('Host found. Connecting your browsers…'); }
+    if (['failed', 'closed'].includes(s)) {
+      // a guest that never got in: say what actually failed rather than "host left"
+      if (!NET.host && !NET.players.size && NET.links.has(peer)) return netFail(s === 'failed' ? "Found the host, but your two networks would not let the browsers connect, even through a relay. Try again, or have one of you switch network (a phone hotspot usually works)." : 'The connection closed before you got in. Try again.');
+      netDrop(peer, s === 'failed' ? 'lost connection' : 'left');
+    }
+  };
   return L;
 }
 function netWire(peer, ch) {
@@ -14865,6 +14878,7 @@ async function netOnSignal(m) {
     netSig('ANSWER', peer, { sdp: L.pc.localDescription.toJSON ? L.pc.localDescription.toJSON() : { type: ans.type, sdp: ans.sdp } });
   } else if (m.type === 'ANSWER') {
     const L = NET.links.get(peer); if (!L) return;
+    NET.answered = true; netStage('Host found. Connecting your browsers…');
     await L.pc.setRemoteDescription(p.sdp); L.remoteSet = true;
     for (const c of L.q) try { await L.pc.addIceCandidate(c); } catch (e) { }
     L.q = [];
@@ -14891,8 +14905,8 @@ async function netHost() {
   renderCoop();
 }
 async function netJoin(code) {
-  code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (code.length !== 6) { NET.err = 'Codes are six letters and numbers, like 7KQ2MX.'; return renderCoop(); }
+  code = netParseCode(code);
+  if (!code) { NET.err = 'Enter the six-character room code, or paste the invite link.'; return renderCoop(); }
   netLeave(true);
   NET.name = netName(); NET.err = ''; NET.host = false; NET.on = true; NET.lobby = true; NET.code = code; NET.id = netPeerId(code) + '-' + netRand(6).toLowerCase();
   renderCoop('Connecting to ' + code + '…');
@@ -14903,7 +14917,13 @@ async function netJoin(code) {
   const off = await L.pc.createOffer(); await L.pc.setLocalDescription(off);
   netSig('OFFER', host, { sdp: L.pc.localDescription.toJSON ? L.pc.localDescription.toJSON() : { type: off.type, sdp: off.sdp } });
   clearTimeout(NET.joinT);
-  NET.joinT = setTimeout(() => { if (NET.on && !NET.host && !NET.players.size) netFail('Could not reach that game. Check the code. If it is right, one of your networks may be blocking direct connections.'); }, 30000);
+  NET.answered = false; netStage('Asking room ' + code + ' to let you in…');
+  NET.joinT = setTimeout(() => {
+    if (!NET.on || NET.host || NET.players.size) return;
+    netFail(NET.answered
+      ? "Found the host, but the connection between your networks didn't come up. Try again, or have one of you switch network (a phone hotspot usually works)."
+      : 'Room ' + code + " didn't answer. Check the code, and make sure the host still has the co-op lobby open on screen (browsers pause tabs that are in the background).");
+  }, 30000);
 }
 function netFail(msg) { netLeave(true); NET.err = msg; renderCoop(); }
 function netLeave(quiet) {
@@ -15118,7 +15138,7 @@ function coopPanel(note) {
       <label class="coop-f"><span class="lbl">Your name</span><input id="netName" maxlength="18" value="${name}" autocomplete="nickname"></label>
       <div class="coop-cols">
         <div class="coop-box"><span class="lbl">Host</span><p>Open a room on <b>${esc(MAPCFG.building)}</b> at <b>${esc(DIFF[feDiff].name)}</b> difficulty. Change the map or difficulty in Maps first.</p><button class="btn" id="netHostBtn">Host a game</button></div>
-        <div class="coop-box"><span class="lbl">Join</span><p>Type the code your host gave you.</p><div class="coop-join"><input id="netCode" maxlength="6" placeholder="7KQ2MX" autocomplete="off" spellcheck="false" style="text-transform:uppercase"><button class="btn" id="netJoinBtn">Join</button></div></div>
+        <div class="coop-box"><span class="lbl">Join</span><p>Type the room code, or paste the invite link your host sent.</p><div class="coop-join"><input id="netCode" placeholder="Code or invite link" autocomplete="off" spellcheck="false"><button class="btn" id="netJoinBtn">Join</button></div></div>
       </div>
       ${note ? `<p class="coop-note">${esc(note)}</p>` : ''}${NET.err ? `<p class="coop-err">${esc(NET.err)}</p>` : ''}
       <p class="coop-small">Co-op preview: you can explore the map together and see each other. Zombies, shared doors and revives come in the next update.</p>`;
@@ -15126,13 +15146,27 @@ function coopPanel(note) {
   const rows = [...NET.players.values()].sort((a, b) => a.slot - b.slot).map(p => `<li><i style="background:${NET_SLOTS[p.slot % NET_SLOTS.length].col}"></i><b>${esc(p.name)}</b>${p.slot === 0 ? '<span>host</span>' : ''}${p.me ? '<span>you</span>' : ''}</li>`).join('');
   const link = NET.code ? coopLink() : '';
   return `<button class="back">← Leave</button><h2>Co-op lobby</h2>
-    ${NET.code && (NET.host ? NET.wsOpen : true) ? `<div class="coop-code"><span class="lbl">Room code</span><b>${esc(NET.code)}</b>${NET.host ? `<button class="btn ghost" id="netCopy">Copy invite link</button>` : ''}</div>` : ''}
+    ${NET.code && (NET.host ? NET.wsOpen : true) ? `<div class="coop-code"><span class="lbl">Room code</span><b>${esc(NET.code)}</b>${NET.host ? `<button class="btn ghost" id="netCopyCode">Copy code</button><button class="btn ghost" id="netCopy">Copy invite link</button>` : ''}</div>` : ''}
     ${NET.host && link ? `<p class="coop-link">${esc(link)}</p>` : ''}
-    <span class="lbl">Crew · ${NET.players.size} / 4</span><ul class="coop-list">${rows || '<li class="dim">Connecting…</li>'}</ul>
+    ${!NET.host && !NET.players.size && NET.stage ? `<p class="coop-note">${esc(NET.stage)}</p>` : ''}<span class="lbl">Crew · ${NET.players.size} / 4</span><ul class="coop-list">${rows || '<li class="dim">Connecting…</li>'}</ul>
     <p class="coop-meta">${esc(MAPCFG.building)} · ${esc((DIFF[NET.host ? feDiff : NET.diff] || DIFF.normal).name)}</p>
     ${note ? `<p class="coop-note">${esc(note)}</p>` : ''}${NET.err ? `<p class="coop-err">${esc(NET.err)}</p>` : ''}
     <div class="btnrow">${NET.host ? `<button class="btn" id="netStart" ${NET.wsOpen ? '' : 'disabled'}>Start the shift${NET.players.size > 1 ? ' · ' + NET.players.size + ' players' : ''}</button>` : `<p class="coop-wait">${NET.players.size ? 'Waiting for the host to start…' : 'Connecting…'}</p>`}</div>`;
 }
+function netCopy(sel, text, label, done) {
+  const b = $(sel); if (!b) return;
+  const ok = () => { b.textContent = done; setTimeout(() => { if ($(sel)) $(sel).textContent = label; }, 1600); };
+  const fallback = () => { const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); t.select(); let k = false; try { k = document.execCommand('copy'); } catch (er) { } t.remove(); k ? ok() : (b.textContent = 'Copy failed: select it by hand'); };
+  try { navigator.clipboard.writeText(text).then(ok, fallback); } catch (er) { fallback(); }
+}
+// accepts a bare code, a code with spaces or dashes, or a whole invite link
+function netParseCode(s) {
+  s = String(s || '').trim();
+  const m = /join-([A-Za-z0-9]{6})/.exec(s); if (m) return m[1].toUpperCase();
+  const c = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return c.length === 6 ? c : '';
+}
+function netStage(t) { NET.stage = t; if (fePanel === 'coop') renderCoop(); }
 function coopLink() { try { const u = new URL(location.href); u.hash = 'join-' + NET.code; return u.href; } catch (e) { return '#join-' + NET.code; } }
 function renderCoop(note) { if (fePanel !== 'coop') return; const P0 = $('#fePanel'); const keep = document.activeElement && document.activeElement.id === 'netCode' ? $('#netCode').value : null; P0.innerHTML = coopPanel(note); if (keep !== null && $('#netCode')) { $('#netCode').value = keep; $('#netCode').focus(); } }
 $('#fePanel').addEventListener('click', e => {
@@ -15142,11 +15176,8 @@ $('#fePanel').addEventListener('click', e => {
   if (e.target.closest('#netHostBtn')) { audioInit(); netHost(); }
   else if (e.target.closest('#netJoinBtn')) { audioInit(); netJoin($('#netCode').value); }
   else if (e.target.closest('#netStart')) netStartHost();
-  else if (e.target.closest('#netCopy')) {
-    const t = coopLink(), b = $('#netCopy');
-    const ok = () => { b.textContent = 'Link copied'; setTimeout(() => { if ($('#netCopy')) $('#netCopy').textContent = 'Copy invite link'; }, 1600); };
-    try { navigator.clipboard.writeText(t).then(ok, () => { b.textContent = 'Select the link below'; }); } catch (er) { b.textContent = 'Select the link below'; }
-  }
+  else if (e.target.closest('#netCopy')) netCopy('#netCopy', coopLink(), 'Copy invite link', 'Link copied');
+  else if (e.target.closest('#netCopyCode')) netCopy('#netCopyCode', NET.code, 'Copy code', 'Code copied');
 }, true);
 $('#fePanel').addEventListener('keydown', e => {
   if (fePanel !== 'coop') return;
